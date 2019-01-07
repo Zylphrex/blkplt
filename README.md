@@ -125,7 +125,6 @@ The two stages are seen in the example below.
 
 ```
 ./bin/ycsb load basic -P workloads/workloada # loading stage
-
 ./bin/ycsb run basic -P workloads/workloada # running stage
 ```
 
