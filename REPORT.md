@@ -145,9 +145,15 @@ We can see that `Cassandra` produced significantly larger trace files when compa
 
 `YCSB` was set to perform its operations as quickly as possible, thus allowing us to use the operations per second as a metric of the `blktrace` overhead. We will only look at the run stage and not the load stage because it is for populating the database with some initial data, and is not a accurate representation of most real-world workloads.
 
+![Cassandra Blktrace Overhead](img/cassandra_overhead.png "Cassandra Overhead"){ width=60% }
+
 Looking at the results from `Cassandra`, we see that `blktrace` is pretty consistent in that it has some overhead ranging from approximately 24% to 36% less operations per second during the workload.
 
+![RocksDB Blktrace Overhead](img/rocksdb_overhead.png "RocksDB Overhead"){ width=60% }
+
 However, once we examine the results for `RocksDB`, the results begin to vary more. We see that for `btrfs`, there is an approximate 36% less operations per second during the workload. Yet when we examine `f2fs` and `ext4`, we see something interesting in that we get a higher operations per second with `blktrace`. Though the difference wasn't assignificant at approximately 12% and 17% respectively.
+
+Overall, these results are somewhat inconclusive. However, in the process of running these tests, there was something perculiar with the results. When running the benchmark without `blktrace` for `RocksDB` on `ext4`, there were times when it was significantly underperforming, reaching only half the operations per second compared to with `blktrace`. But after some time, the performance slowly recovered to a more expected level. This leads us to believe our results may be an exception and not the rule and that there is some other factor at play here. Meaning that `blktrace` overhead would likely be in the 24% to 36% range.
 
 ## Btrfs Slow
 
