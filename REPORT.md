@@ -1,4 +1,4 @@
-# Workload Analysis
+# SSD Workload Analysis (Cassandra and RocksDB)
 
 ## Introduction
 
@@ -82,7 +82,7 @@ This is the base configuration used for all benchmarks on `Cassandra` and `Rocks
 - insertportion=0
 - requestdistribution=zipfian
 
-This configuration was chosen for a few things. Because of the SSD used in the test was 470G in size, we want enough data on the disk and to perform sufficiently many operations for the test to be meaningful. So we chose to fill the disk a little over half full, then perform enough enough operations on the disk such that the log will fill up at least once. Because of this, we populated the database with 250 million records in the database,  occupying approximately 50%-60% of the disk. Then by performing 1 billion operations on the records with 50% updates, we can then write enough data to fill the entire disk at least once. The zipfian request distribution was chosen to more closely simulate what a real-world worklaod is like.
+This configuration was chosen for a few things. Because of the SSD used in the test was 470G in size, we want enough data on the disk and to perform sufficiently many operations for the test to be meaningful. So we chose to fill the disk a little over half full, then perform enough enough operations on the disk such that the log will fill up at least once. Because of this, we populated the database with 250 million records in the database,  occupying approximately 50%-60% of the disk. Then by performing 1 billion operations on the records with 50% updates, we can then write enough data to fill the entire disk at least once. The zipfian request distribution was chosen to more closely simulate what a real-world workload is like.
 
 For `Cassandra` on `btrfs`, the configuration had to be changed as follows:
 
@@ -111,13 +111,20 @@ These 16 threads already cause the CPU utilization to max out at 100% for all 28
 
 ## Access Frequency
 
-Looking at all of the access frequencies (read/write/both), we see that they all roughly follow an zipfian curve with slight irregularities at some points. The irregularities, however, doesn't seem to be too far out of the ordinary as they occured at lower access frequencies. Meaning where these irregularities can be observed, the access frequency was not very high. Furthermore, the regions around these irregularities appear fairly regular, leading us to believe that should the benchmark be allowed to continue running, these irregularitie would dissappear with enough data.
+![Cassandra Access Frequency](img/cassandra_all.jpg){ width=50% }\ ![RocksDB Access Frequency](img/rocksdb_all.jpg){ width=50% }
+
+Looking at all of the access frequencies (read/write/both), we see that they all roughly follow an zipfian curve that can be attributed to the fact that `YCSB` was configured to access blocks with a zipfian distribution. Furthermore some of them has a slight irregularities at some points. The irregularities, however, doesn't seem to be too far out of the ordinary as they occured at lower access frequencies. Meaning where these irregularities can be observed, the access frequency was not very high. Furthermore, the regions around these irregularities appear fairly regular, leading us to believe that should the benchmark be allowed to continue running, these irregularities would dissappear with enough data.
+
+Something interesting here is that even though the benchmark for `Cassandra` on `btrfs` has less records and less operations, there were a significant number of blocks that were accessed more than for `Cassandra` on `ext4` and `f2fs`.
+
+![Cassandra ext4 Access Frequency](img/cassandra_ext4_all.jpg){ width=33% }\ ![Cassandra f2fs Access Frequency](img/cassandra_f2fs_all.jpg){ width=33% }\ ![Cassandra btrfs Access Frequency](img/cassandra_btrfs_all.jpg){ width=33% }
+![RocksDB ext4 Access Frequency](img/rocksdb_ext4_all.jpg){ width=33% }\ ![RocksDB f2fs Access Frequency](img/rocksdb_f2fs_all.jpg){ width=33% }\ ![RocksDB btrfs Access Frequency](img/rocksdb_btrfs_all.jpg){ width=33% }
 
 Another point of interest is that looking at all of the read frequencies, `btrfs` has less blocks with very high access frequencies, whereas `f2fs` and `ext4` has relatively higher number of blocks with very high access frequencies. This pattern appears for both `Cassandra` and `RocksDB`. Based on the characteristics of each of the file systems, one possibility is that in the case of `f2fs` and `ext4`, these blocks corresponds to those storing file system metadata such as the super block on an `ext4` file system. This read pattern doesn't appear on `btrfs` can be attributed to the fact that on a SSD, `btrfs` turns off metadata duplication by default. And as a result, the operating system no longer has do all the same operations on the metadata since it is already handled at the SSD level.
 
 ## blktrace
 
-### Trace sizes
+### Traces
 
 Below we see the sizes of the `blktrace` file that have been filtered for file system requests (`-a fs`). For convenience, the duration of the trace was included next to each entry.
 
@@ -131,7 +138,9 @@ Below we see the sizes of the `blktrace` file that have been filtered for file s
 
 Notice that `btrfs` had a significantly smaller trace file, but this is attributed to the fact that we had to scale down the workload for `btrfs`. See **Btrfs Slow** for more details.
 
-#### RocksDB
+Comparing `ext4` with `f2fs`, we see that there isn't a significant difference in time here since `Cassandra` was not optimized for flash storage. As a result, we get comparable performance for `Cassandra` on `ext4` and `f2fs`.
+
+### RocksDB
 
 | File System | blktrace Size | Duration |
 |:------------|--------------:|---------:|
@@ -141,15 +150,15 @@ Notice that `btrfs` had a significantly smaller trace file, but this is attribut
 
 We can see that `Cassandra` produced significantly larger trace files when compared to `RocksDB`. This can be attributed to the fact that `Cassandra` keeps more metadata relative to `RocksDB`. The trace files for `Cassandra` only include the data directory; all of meta such as the commit logs and hints were written to another disk. However, the trace files for the metadata directories were less than 100M for the entirety of the workload, and thus we have chosen to leave them out. Accounting for all this, the final trace files were all relatively similar in size for each of the three file systems.
 
+Comparing the three file systems for `RocksDB`, we see that `f2fs` was significantly faster, and we can likely attribute this to the fact that `RocksDB` was designed with flash storage in mind for optimal performance. Next `btrfs` wasn't noticably faster than `ext4`, but that is likely because `btrfs` was built with ease of adminitration in mind and thus is not as well optimized as `f2fs`. And we have `ext4` in last place, which isn't too far behind `btrfs`.
+
 ### Overhead
 
 `YCSB` was set to perform its operations as quickly as possible, thus allowing us to use the operations per second as a metric of the `blktrace` overhead. We will only look at the run stage and not the load stage because it is for populating the database with some initial data, and is not a accurate representation of most real-world workloads.
 
-![Cassandra Blktrace Overhead](img/cassandra_overhead.png "Cassandra Overhead"){ width=60% }
+![Cassandra Blktrace Overhead](img/cassandra_overhead.png "Cassandra Overhead"){ width=50% }\ ![RocksDB Blktrace Overhead](img/rocksdb_overhead.png "RocksDB Overhead"){ width=50% }
 
 Looking at the results from `Cassandra`, we see that `blktrace` is pretty consistent in that it has some overhead ranging from approximately 24% to 36% less operations per second during the workload.
-
-![RocksDB Blktrace Overhead](img/rocksdb_overhead.png "RocksDB Overhead"){ width=60% }
 
 However, once we examine the results for `RocksDB`, the results begin to vary more. We see that for `btrfs`, there is an approximate 36% less operations per second during the workload. Yet when we examine `f2fs` and `ext4`, we see something interesting in that we get a higher operations per second with `blktrace`. Though the difference wasn't assignificant at approximately 12% and 17% respectively.
 
@@ -162,3 +171,13 @@ For the actual experiment, we had to adjust the configurations when running the 
 This can be explained if we looked a little closely. Cassandra stores the data in a series of large files, and in our tests, some of which were over 1G in size. From the [Gotchas](https://btrfs.wiki.kernel.org/index.php/Gotchas#Fragmentation) under fragmentation, we see one possible explaination. Large files like the ones created by `Cassandra`, can easily be fragmented with random  writes. This behaviour wasn't evident during the load stage of `YCSB`, but as soon as we ran the run stage of `YCSB`, we see this drastic slowdown.
 
 This slowdown was only experience when running `Cassandra` on `btrfs`, but not when running `RocksDB` on `btrfs`. Upon examining the data directory of `RocksDB`, we see that, unlike `Cassandra`, `RocksDB` created lots of smaller files, each in the tens of MBs, thus we do not experience the same slowdown.
+
+## Throughput
+
+Looking at the throughput of all the benchmarks, we see that `Cassandra` has a significantly higher read throughput, but much lower in write throughput. Whereas for `RocksDB` has a something in between for both read and write throughput. This seems very reasonable as noted earlier, `Cassandra` stores data in a series of large files which makes random writes to them slower due to the nature of SSDs but fast to read from. `RocksDB` stores data in lots of smaller files meaning writing to them is faster and reading from them is also relatively quick.
+
+The actual diagrams were not included in this report because they do not fit, instead you can find svg versions of them at [https://github.com/Zylphrex/blkplt/tree/master/img](https://github.com/Zylphrex/blkplt/tree/master/img).
+
+## Conclusion
+
+`Cassandra`'s approach of storing data in large files is not well suited for `btrfs`, but works well on `f2fs` and `ext4`, though it is not optimized for flash storage which we can see from the results of the benchmarks. However, with a well optimized database system like `RocksDB` with `f2fs`, we can achieve significant improvements in performance. And looking at the block access frequencies, we see a typical zipfian distribution.
